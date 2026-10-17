@@ -1291,4 +1291,73 @@ export class XtreamClient {
     this.password = config.password;
   }
 
-  private url(endpoint: string, params:
+  private url(endpoint: string, params:Record<string, string> = {}) { const query = new URLSearchParams(params).toString(); return ${this.baseUrl}/player_api.php?username=${this.username}&password=${this.password}&action=${endpoint}${query ? '&' + query : ''}; }
+async authenticate() { const res = await fetch(this.url('')); if (!res.ok) throw new Error('Authentification échouée'); return res.json(); }
+async getLiveCategories(): Promise<XtreamCategory[]> { const res = await fetch(this.url('get_live_categories')); return res.json(); }
+async getLiveStreams(categoryId?: string): Promise<XtreamChannel[]> { const params = categoryId ? { category_id: categoryId } : {}; const res = await fetch(this.url('get_live_streams', params)); return res.json(); }
+async getVodCategories(): Promise<XtreamCategory[]> { const res = await fetch(this.url('get_vod_categories')); return res.json(); }
+async getVodStreams(categoryId?: string): Promise<XtreamVod[]> { const params = categoryId ? { category_id: categoryId } : {}; const res = await fetch(this.url('get_vod_streams', params)); return res.json(); }
+async getVodInfo(streamId: number) { const res = await fetch(this.url('get_vod_info', { stream_id: String(streamId) })); return res.json(); }
+getStreamUrl(streamId: number, ext = 'm3u8') { return ${this.baseUrl}/live/${this.username}/${this.password}/${streamId}.${ext}; }
+getVodUrl(streamId: number) { return ${this.baseUrl}/movie/${this.username}/${this.password}/${streamId}.mp4; } }
+export interface M3UItem { name: string; url: string; logo?: string; group?: string; id?: string; }
+export async function fetchM3U(url: string): Promise<M3UItem[]> { try { const response = await fetch(url); if (!response.ok) throw new Error('Erreur réseau'); const text = await response.text(); return parseM3U(text); } catch (error) { console.error('Erreur chargement M3U:', error); throw error; } }
+export function parseM3U(content: string): M3UItem[] { const lines = content.split('\n'); const items: M3UItem[] = [];
+let tempItem: Partial<M3UItem> = {};
+for (let i = 0; i < lines.length; i++) { const line = lines[i].trim();
+if (line.startsWith('#EXTINF:')) {
+  const nameMatch = line.match(/,(.*)$/);
+  const logoMatch = line.match(/tvg-logo="([^"]*)"/);
+  const groupMatch = line.match(/tvg-group="([^"]*)"/);
+  
+  tempItem.name = nameMatch ? nameMatch[1].trim() : 'Canal sans nom';
+  tempItem.logo = logoMatch ? logoMatch[1] : undefined;
+  tempItem.group = groupMatch ? groupMatch[1] : undefined;
+} 
+else if (line && !line.startsWith('#') && line.startsWith('http')) {
+  tempItem.url = line;
+  if (tempItem.name) {
+    items.push({
+      name: tempItem.name,
+      url: tempItem.url,
+      logo: tempItem.logo,
+      group: tempItem.group,
+    });
+    tempItem = {};
+  }
+}
+}
+return items; }
+export interface EpgProgramme { channel: string; start: Date; stop: Date; title: string; subTitle?: string; description?: string; icon?: string; }
+function parseTime(timeStr: string): Date { const year = parseInt(timeStr.slice(0, 4)); const month = parseInt(timeStr.slice(4, 6)) - 1; const day = parseInt(timeStr.slice(6, 8)); const hour = parseInt(timeStr.slice(8, 10)); const minute = parseInt(timeStr.slice(10, 12)); const second = parseInt(timeStr.slice(12, 14)) || 0; return new Date(year, month, day, hour, minute, second); }
+export function parseXMLTV(xml: string) { const programs: EpgProgramme[] = [];
+const programmeRegex = /<programme[^>]channel="([^"]+)"[^>]start="([^"]+)"[^>]stop="([^"]+)"[^>]>([\s\S]?)</programme>/gi; const titleRegex = /<title[^>]>([\s\S]?)</title>/i; const subTitleRegex = /<sub-title[^>]>([\s\S]?)</sub-title>/i; const descRegex = /<desc[^>]>([\s\S]*?)</desc>/i; const iconRegex = /<icon[^>]src="([^"]+)"[^>]/>/i;
+let match; while ((match = programmeRegex.exec(xml)) !== null) { const [_, channelId, startStr, stopStr, content] = match;
+const titleMatch = content.match(titleRegex);
+const subTitleMatch = content.match(subTitleRegex);
+const descMatch = content.match(descRegex);
+const iconMatch = content.match(iconRegex);
+
+try {
+  programs.push({
+    channel: channelId,
+    start: parseTime(startStr),
+    stop: parseTime(stopStr),
+    title: titleMatch ? titleMatch[1].trim() : 'Sans titre',
+    subTitle: subTitleMatch ? subTitleMatch[1].trim() : undefined,
+    description: descMatch ? descMatch[1].trim() : undefined,
+    icon: iconMatch ? iconMatch[1] : undefined,
+  });
+} catch (e) {
+  console.warn('Erreur parsing programme:', e);
+}
+}
+return programs; }
+export async function fetchEPG(url: string) { const res = await fetch(url); if (!res.ok) throw new Error('Impossible de charger l'EPG'); const xml = await res.text(); return parseXMLTV(xml);  
+node_modules/
+dist/
+.expo/
+*.log
+.env
+ npm install
+npx expo start
